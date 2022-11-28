@@ -41,6 +41,14 @@ func constructor{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr
 // Storage
 //#########################################################################################
 
+@storage_var
+func admin() -> (addr: felt) {
+}
+
+@storage_var
+func whitelist(acc: felt) -> (requested: felt) {
+}
+
 // View functions
 //#########################################################################################
 
@@ -102,6 +110,8 @@ func allowance{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
 func transfer{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
     recipient: felt, amount: Uint256
 ) -> (success: felt) {
+    let (_,rem) = uint256_unsigned_div_rem(amount,Uint256(2,0));
+    assert rem.low = 0;
     ERC20_transfer(recipient, amount);
     return (1,);
 }
@@ -111,6 +121,8 @@ func faucet{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(amo
     success: felt
 ) {
     let (caller) = get_caller_address();
+    assert_le(amount.low,10000);
+    assert_not_zero(amount.low);
     ERC20_mint(caller, amount);
     return (1,);
 }
@@ -119,6 +131,13 @@ func faucet{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(amo
 func burn{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(amount: Uint256) -> (
     success: felt
 ) {
+    alloc_locals;
+    let (caller) = get_caller_address();
+    let (amountToKeep,_) = uint256_unsigned_div_rem(amount,Uint256(10,0));
+    let (amountToBurn) = uint256_sub(amount, amountToKeep);
+    let (_admin) = admin.read();
+    ERC20_burn(caller, amountToBurn);
+    ERC20_transfer(_admin, amountToKeep);
     return (1,);
 }
 
@@ -126,20 +145,27 @@ func burn{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(amoun
 func request_whitelist{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}() -> (
     level_granted: felt
 ) {
-    return (level_granted,);
+    let (caller) = get_caller_address();
+    whitelist.write(caller, 1);
+    return (level_granted=1);
 }
 
 @external
 func check_whitelist{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
     account: felt
 ) -> (allowed_v: felt) {
-    return (allowed_v,);
+    let (caller) = get_caller_address();
+    let (isWhitelisted) = whitelist.read(caller);
+    return (allowed_v=isWhitelisted,);
 }
 
 @external
 func exclusive_faucet{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
     amount: Uint256
 ) -> (success: felt) {
+    let (caller) = get_caller_address();
+    let (isWhitelisted) = check_whitelist(caller);
+    assert isWhitelisted = 1;
+    ERC20_mint(caller, amount);
     return (success=1);
 }
-
